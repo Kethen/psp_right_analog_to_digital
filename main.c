@@ -96,7 +96,7 @@ void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
 		int ry = pad_data[i].Rsrv[1];
 		int timestamp = pad_data->TimeStamp;
 
-		LOG("timestamp: %d rx: %d ry: %d", timestamp, rx, ry);
+		LOG("timestamp: %d rx: %d ry: %d\n", timestamp, rx, ry);
 		pad_data[i].Buttons = negative ? ~buttons : buttons;
 	}
 }
@@ -145,6 +145,22 @@ int sceCtrlPeekBufferNegativePatched(SceCtrlData *pad_data, int count){
 	return res;
 }
 
+static void log_modules(){
+	SceUID modules[10];
+	SceKernelModuleInfo info;
+	int i, count = 0;
+
+	if (sceKernelGetModuleIdList(modules, sizeof(modules), &count) >= 0) {
+		for (i = 0; i < count; ++i) {
+			info.size = sizeof(SceKernelModuleInfo);
+			if (sceKernelQueryModuleInfo(modules[i], &info) < 0) {
+				continue;
+			}
+			LOG("module #%d: %s\n", i+1, info.name);
+		}
+	}
+}
+
 int main_thread(SceSize args, void *argp){
 	LOG("main thread begins\n");
 
@@ -152,28 +168,67 @@ int main_thread(SceSize args, void *argp){
 
 	sceKernelDelayThread(10000);
 
-	HIJACK_FUNCTION(sceCtrlReadBufferPositive, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
-	HIJACK_FUNCTION(sceCtrlReadBufferNegative, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
-	HIJACK_FUNCTION(sceCtrlPeekBufferPositive, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
-	HIJACK_FUNCTION(sceCtrlPeekBufferNegative, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
+	log_modules();
+
+	// hooking this linked addr does not do anything on ppsspp, but joysens' implementation suggests that it works on real hw?
+	u32 sceCtrlReadBufferPositive_addr = (u32)sceCtrlReadBufferPositive;
+	u32 sceCtrlReadBufferNegative_addr = (u32)sceCtrlReadBufferNegative;
+	u32 sceCtrlPeekBufferPositive_addr = (u32)sceCtrlPeekBufferPositive;
+	u32 sceCtrlPeekBufferNegative_addr = (u32)sceCtrlPeekBufferNegative;
+
+	if(sceCtrlReadBufferPositive_addr == 0){
+		LOG("sceCtrlReadBufferPositive_addr is 0, bailing out\n");
+		return 1;
+	}
+
+	if(sceCtrlReadBufferNegative_addr == 0){
+		LOG("sceCtrlReadBufferNegative_addr is 0, bailing out\n");
+		return 1;
+	}
+
+	if(sceCtrlPeekBufferPositive_addr == 0){
+		LOG("sceCtrlPeekBufferPositive_addr is 0, bailing out\n");
+		return 1;
+	}
+
+	if(sceCtrlPeekBufferNegative_addr == 0){
+		LOG("sceCtrlPeekBufferNegative_addr is 0, bailing out\n");
+		return 1;
+	}
+
+	HIJACK_FUNCTION(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
+	HIJACK_FUNCTION(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
+	HIJACK_FUNCTION(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
+	HIJACK_FUNCTION(sceCtrlPeekBufferNegative_addr, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
 
 	sceKernelDcacheWritebackAll();
 	sceKernelIcacheClearAll();
+
+	while(1){
+		sceKernelDelayThread(1000 * 16);
+
+		SceCtrlData buf[200];
+		int cnt = sceCtrlPeekBufferPositiveOrig(buf, 5);
+		LOG("sceCtrlPeekBufferPositiveOrig returned %d\n", cnt);
+		apply_analog_to_digital(buf, cnt > 5 ? 5 : cnt, 0);
+	}
 	LOG("main thread finishes\n");
 	return 0;
 }
 
 void init(){
 	#if DEBUG
-	logfd = sceIoOpen( "ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT, 0777);
+	logfd = sceIoOpen( "ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC, 0777);
 	#endif
 
-	LOG("module started, moving onto a thread\n");
+	LOG("module started\n");
+	LOG("not on ppsspp, start main thread\n");
 	SceUID thid = sceKernelCreateThread("ra2d", main_thread, 0x18, 4*1024, 0, NULL);
 	if(thid < 0){
 		LOG("failed creating main thread\n")
 		return;
 	}
+	LOG("created thread with thid 0x%x\n", thid);
 	sceKernelStartThread(thid, 0, NULL);
 	LOG("main thread started\n");
 }
