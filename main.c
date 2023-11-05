@@ -19,13 +19,15 @@
 #include <pspsdk.h>
 #include <pspkernel.h>
 #include <pspctrl.h>
+#include <pspiofilemgr.h>
+#include <pspthreadman.h>
 
 #include <stdio.h>
 #include <string.h>
 
 #include <systemctrl.h>
 
-PSP_MODULE_INFO("MGSRemastered", 0x1007, 1, 0);
+PSP_MODULE_INFO("ra2d", 0x1007, 1, 0);
 
 int sceKernelQuerySystemCall(void *function);
 
@@ -33,7 +35,11 @@ int sceKernelQuerySystemCall(void *function);
 
 #define HIJACK_FUNCTION(a, f, ptr) \
 { \
-  u32 _func_ = a; \
+  u32 _func_ = (u32)a; \
+  u32 ff = (u32)f; \
+  if(!is_emulator){ \
+    ff = MakeSyscallStub(f); \
+  } \
   static u32 patch_buffer[3]; \
   _sw(_lw(_func_), (u32)patch_buffer); \
   _sw(_lw(_func_ + 4), (u32)patch_buffer + 8);\
@@ -47,6 +53,8 @@ int sceKernelQuerySystemCall(void *function);
 
 static STMOD_HANDLER previous;
 
+static int is_emulator;
+
 static int (* getCamera)(int *input);
 static int (* getInputPw)(char *input);
 static int (* getInputPo)(char *input);
@@ -59,141 +67,141 @@ static u32 MakeSyscallStub(void *function) {
   return stub;
 }
 
-int getCameraPatched(int *input) {
-  int k1 = pspSdkSetK1(0);
+// is there a flush..? or the non async version always syncs?
+#define DEBUG 1
+#if DEBUG
+static int logfd;
+#define LOG(...) \
+if(logfd > 0){ \
+	char logbuf[128]; \
+	int loglen = sprintf(logbuf, __VA_ARGS__); \
+	if(loglen > 0){ \
+		sceIoWrite(logfd, logbuf, loglen); \
+	} \
+}
+#else // DEBUG
+#define LOG(...)
+#endif // DEBUG
+// what to do about latch? how to achieve the same?
 
-  SceCtrlData pad;
-  sceCtrlPeekBufferPositive(&pad, 1);
+void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
+	if(count < 1){
+		LOG("count is %d, processing skipped\n", count);
+		return;
+	}
 
-  input[752/4] = pad.Rsrv[0] - 128;
-  input[756/4] = pad.Rsrv[1] - 128;
+	LOG("processing %d buffers in %s mode\n", count, negative? "negative" : "positive")
 
-  pspSdkSetK1(k1);
-  return getCamera(input);
+	int i;
+	for(i = 0;i < count; i++){
+		int buttons = negative ? ~pad_data[i].Buttons : pad_data[i].Buttons;
+		int rx = pad_data[i].Rsrv[0];
+		int ry = pad_data[i].Rsrv[1];
+		int timestamp = pad_data->TimeStamp;
+
+		if(logfd > 0){
+			char logbuf[128];
+			sprintf(logbuf, "timestamp: %d rx: %d ry: %d", timestamp, rx, ry);
+		}
+		pad_data[i].Buttons = negative ? ~buttons : buttons;
+	}
 }
 
-int getInputPwPatched(char *input) {
-  int res = getInputPw(input);
-  int k1 = pspSdkSetK1(0);
+static int (*sceCtrlReadBufferPositiveOrig)(SceCtrlData *pad_data, int count);
+int sceCtrlReadBufferPositivePatched(SceCtrlData *pad_data, int count){
+	int k1 = pspSdkSetK1(0);
+	int res = sceCtrlReadBufferPositiveOrig(pad_data, count);
 
-  SceCtrlData pad;
-  sceCtrlPeekBufferPositive(&pad, 1);
+	apply_analog_to_digital(pad_data, res, 0);
 
-  if (pad.Rsrv[0] < 64 || pad.Rsrv[0] > 192)
-    input[2046] = pad.Rsrv[0] - 128;
-
-  if (pad.Rsrv[1] < 64 || pad.Rsrv[1] > 192)
-    input[2047] = pad.Rsrv[1] - 128;
-
-  pspSdkSetK1(k1);
-  return res;
+	pspSdkSetK1(k1);
+	return res;
 }
 
-int getInputPoPatched(char *input) {
-  int res = getInputPo(input);
-  int k1 = pspSdkSetK1(0);
+static int (*sceCtrlReadBufferNegativeOrig)(SceCtrlData *pad_data, int count);
+int sceCtrlReadBufferNegativePatched(SceCtrlData *pad_data, int count){
+	int k1 = pspSdkSetK1(0);
+	int res = sceCtrlReadBufferNegativeOrig(pad_data, count);
 
-  SceCtrlData pad;
-  sceCtrlPeekBufferPositive(&pad, 1);
+	apply_analog_to_digital(pad_data, res, 1);
 
-  if (pad.Rsrv[0] < 64 || pad.Rsrv[0] > 192)
-    input[1842] = pad.Rsrv[0] - 128;
-
-  if (pad.Rsrv[1] < 64 || pad.Rsrv[1] > 192)
-    input[1843] = pad.Rsrv[1] - 128;
-
-  pspSdkSetK1(k1);
-  return res;
+	pspSdkSetK1(k1);
+	return res;
 }
 
-void applyPatch(u32 text_addr, u32 text_size, int emulator){
-  u32 i;
-  for (i = 0; i < text_size; i += 4) {
-    u32 addr = text_addr + i;
+static int (*sceCtrlPeekBufferPositiveOrig)(SceCtrlData *pad_data, int count);
+int sceCtrlPeekBufferPositivePatched(SceCtrlData *pad_data, int count){
+	int k1 = pspSdkSetK1(0);
+	int res = sceCtrlPeekBufferPositiveOrig(pad_data, count);
 
-    int po = (_lw(addr + 0x00) == 0x5040004F && _lw(addr + 0x04) == 0x02402021 && _lw(addr + 0x08) == 0xAE0002F0);
-    int pw = (_lw(addr + 0x00) == 0x1040004F && _lw(addr + 0x04) == 0x00000000 && _lw(addr + 0x08) == 0xAE0002F0);
-    if (po || pw) {
-      // Skip branch
-      _sw(0, addr + 0x00);
+	apply_analog_to_digital(pad_data, res, 0);
 
-      // Don't reset camera
-      _sw(0, addr + 0x08);
-      _sw(0, addr + 0x0C);
+	pspSdkSetK1(k1);
+	return res;
+}
 
-      // Redirect camera function
-      if (pw) {
-        if(emulator == 0){
-          HIJACK_FUNCTION(addr - 0x38, MakeSyscallStub(getCameraPatched), getCamera);
-        }else{
-          HIJACK_FUNCTION(addr - 0x38, getCameraPatched, getCamera);
-        }
-      } else {
-        if(emulator == 0){
-          HIJACK_FUNCTION(addr - 0x3C, MakeSyscallStub(getCameraPatched), getCamera);
-        }else{
-          HIJACK_FUNCTION(addr - 0x3C, getCameraPatched, getCamera);
-        }
-      }
+static int (*sceCtrlPeekBufferNegativeOrig)(SceCtrlData *pad_data, int count);
+int sceCtrlPeekBufferNegativePatched(SceCtrlData *pad_data, int count){
+	int k1 = pspSdkSetK1(0);
+	int res = sceCtrlPeekBufferNegativeOrig(pad_data, count);
 
-      continue;
-    }
+	apply_analog_to_digital(pad_data, res, 1);
 
-    // Redirect input for camera in aiming mode
-    if (_lw(addr + 0x00) == 0x27BDFFD0 && _lw(addr + 0x0C) == 0x00808021 && _lw(addr + 0x28) == 0xE7B40020) {
-      if(emulator == 0){
-        HIJACK_FUNCTION(addr + 0x00, MakeSyscallStub(getInputPwPatched), getInputPw);
-      }else{
-        HIJACK_FUNCTION(addr + 0x00, getInputPwPatched, getInputPw);
-      }
-      continue;
-    }
-    if (_lw(addr + 0x00) == 0x27BDFFC0 && _lw(addr + 0x0C) == 0x2407FFFF && _lw(addr + 0x38) == 0xE7B40030) {
-      if(emulator == 0){
-        HIJACK_FUNCTION(addr + 0x00, MakeSyscallStub(getInputPoPatched), getInputPo);
-      }else{
-        HIJACK_FUNCTION(addr + 0x00, getInputPoPatched, getInputPo);
-      }
-      continue;
-    }
-  }
+	pspSdkSetK1(k1);
+	return res;
+}
 
-  sceKernelDcacheWritebackAll();
-  sceKernelIcacheClearAll();
+int main_thread(SceSize args, void *argp){
+	LOG("main thread begins\n");
+
+	// probably read config here
+
+	sceKernelDelayThread(10000);
+
+	LOG("hijacking functions\n");
+	HIJACK_FUNCTION(sceCtrlReadBufferPositive, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
+	HIJACK_FUNCTION(sceCtrlReadBufferNegative, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
+	HIJACK_FUNCTION(sceCtrlPeekBufferPositive, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
+	HIJACK_FUNCTION(sceCtrlPeekBufferNegative, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
+
+	sceKernelDcacheWritebackAll();
+	sceKernelIcacheClearAll();
+	LOG("main thread finishes\n");
+}
+
+void init(){
+	#if DEBUG
+	logfd = sceIoOpen( "ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND, 0777);
+	#endif
+
+	LOG("module started, moving onto a thread\n");
+	SceUID thid = sceKernelCreateThread("ra2d", main_thread, 0x18, 4*1024, 0, NULL);
+	if(thid < 0){
+		LOG("failed creating main thread\n")
+		return;
+	}
+	sceKernelStartThread(thid, 0, NULL);
+	LOG("main thread started\n");
+	sceKernelDeleteThread(thid);
 }
 
 int OnModuleStart(SceModule2 *mod) {
-  if (strcmp(mod->modname, "mgp_main") == 0) {
-    applyPatch(mod->text_addr, mod->text_size, 0);
-  }
+    init(0);
 
-  if (!previous)
-    return 0;
+	if (!previous)
+	return 0;
 
-  return previous(mod);
+	return previous(mod);
 }
 
 static void CheckModules() {
-  SceUID modules[10];
-  SceKernelModuleInfo info;
-  int i, count = 0;
-
-  if (sceKernelGetModuleIdList(modules, sizeof(modules), &count) >= 0) {
-    for (i = 0; i < count; ++i) {
-      info.size = sizeof(SceKernelModuleInfo);
-      if (sceKernelQueryModuleInfo(modules[i], &info) < 0) {
-        continue;
-      }
-      if (strcmp(info.name, "mgp_main") == 0) {
-        applyPatch(info.text_addr, info.text_size, 1);
-      }
-    }
-  }
+	init(1);
 }
 
 int module_start(SceSize args, void *argp) {
   sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
-  if (sceIoDevctl("kemulator:", EMULATOR_DEVCTL__IS_EMULATOR, NULL, 0, NULL, 0) == 0) {
+  is_emulator = sceIoDevctl("kemulator:", EMULATOR_DEVCTL__IS_EMULATOR, NULL, 0, NULL, 0) == 0;
+  if (is_emulator) {
     // Just scan the modules using normal/official syscalls.
     CheckModules();
   } else {

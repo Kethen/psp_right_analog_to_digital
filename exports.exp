@@ -5,10 +5,11 @@ PSP_EXPORT_FUNC(module_start)
 PSP_EXPORT_VAR(module_info)
 PSP_EXPORT_END
 
-PSP_EXPORT_START(MGSRemasteredLib, 0, 0x4001)
-PSP_EXPORT_FUNC(getCameraPatched)
-PSP_EXPORT_FUNC(getInputPwPatched)
-PSP_EXPORT_FUNC(getInputPoPatched)
+PSP_EXPORT_START(ra2dLib, 0, 0x4001)
+PSP_EXPORT_FUNC(sceCtrlReadBufferPositivePatched)
+PSP_EXPORT_FUNC(sceCtrlReadBufferNegativePatched)
+PSP_EXPORT_FUNC(sceCtrlPeekBufferPositivePatched)
+PSP_EXPORT_FUNC(sceCtrlPeekBufferNegativePatched)
 PSP_EXPORT_END
 
 PSP_END_EXPORTS
