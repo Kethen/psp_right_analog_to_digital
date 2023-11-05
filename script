@@ -1,0 +1,5 @@
+#cp -v m33_sdk_prebuilt/include/* /usr/local/pspdev/psp/include/
+cp -v m33_sdk_prebuilt/include/* /usr/local/pspdev/psp/sdk/include/
+cp -v m33_sdk_prebuilt/lib/* /usr/local/pspdev/psp/sdk/lib/
+make clean
+make
