@@ -31,33 +31,11 @@ PSP_MODULE_INFO("ra2d", 0x1007, 1, 0);
 
 int sceKernelQuerySystemCall(void *function);
 
-#define MAKE_JUMP(a, f) _sw(0x08000000 | (((u32)(f) & 0x0FFFFFFC) >> 2), a);
-
-#define HIJACK_FUNCTION(a, f, ptr) \
-{ \
-  u32 _func_ = (u32)a; \
-  u32 ff = (u32)f; \
-  if(!is_emulator){ \
-    ff = MakeSyscallStub(f); \
-  } \
-  static u32 patch_buffer[3]; \
-  _sw(_lw(_func_), (u32)patch_buffer); \
-  _sw(_lw(_func_ + 4), (u32)patch_buffer + 8);\
-  MAKE_JUMP((u32)patch_buffer + 4, _func_ + 8); \
-  _sw(0x08000000 | (((u32)(f) >> 2) & 0x03FFFFFF), _func_); \
-  _sw(0, _func_ + 4); \
-  ptr = (void *)patch_buffer; \
-}
-
 #define EMULATOR_DEVCTL__IS_EMULATOR     0x00000003
 
 static STMOD_HANDLER previous;
 
 static int is_emulator;
-
-static int (* getCamera)(int *input);
-static int (* getInputPw)(char *input);
-static int (* getInputPo)(char *input);
 
 static u32 MakeSyscallStub(void *function) {
   SceUID block_id = sceKernelAllocPartitionMemory(PSP_MEMORY_PARTITION_USER, "", PSP_SMEM_High, 2 * sizeof(u32), NULL);
@@ -84,6 +62,25 @@ if(logfd > 0){ \
 #endif // DEBUG
 // what to do about latch? how to achieve the same?
 
+#define MAKE_JUMP(a, f) _sw(0x08000000 | (((u32)(f) & 0x0FFFFFFC) >> 2), a);
+
+#define HIJACK_FUNCTION(a, f, ptr) \
+{ \
+  LOG("hijacking function at 0x%lx with 0x%lx\n", (u32)a, (u32)f); \
+  u32 _func_ = (u32)a; \
+  u32 ff = (u32)f; \
+  if(!is_emulator){ \
+    ff = MakeSyscallStub(f); \
+  } \
+  static u32 patch_buffer[3]; \
+  _sw(_lw(_func_), (u32)patch_buffer); \
+  _sw(_lw(_func_ + 4), (u32)patch_buffer + 8);\
+  MAKE_JUMP((u32)patch_buffer + 4, _func_ + 8); \
+  _sw(0x08000000 | (((u32)(ff) >> 2) & 0x03FFFFFF), _func_); \
+  _sw(0, _func_ + 4); \
+  ptr = (void *)patch_buffer; \
+}
+
 void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
 	if(count < 1){
 		LOG("count is %d, processing skipped\n", count);
@@ -99,10 +96,7 @@ void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
 		int ry = pad_data[i].Rsrv[1];
 		int timestamp = pad_data->TimeStamp;
 
-		if(logfd > 0){
-			char logbuf[128];
-			sprintf(logbuf, "timestamp: %d rx: %d ry: %d", timestamp, rx, ry);
-		}
+		LOG("timestamp: %d rx: %d ry: %d", timestamp, rx, ry);
 		pad_data[i].Buttons = negative ? ~buttons : buttons;
 	}
 }
@@ -158,7 +152,6 @@ int main_thread(SceSize args, void *argp){
 
 	sceKernelDelayThread(10000);
 
-	LOG("hijacking functions\n");
 	HIJACK_FUNCTION(sceCtrlReadBufferPositive, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
 	HIJACK_FUNCTION(sceCtrlReadBufferNegative, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
 	HIJACK_FUNCTION(sceCtrlPeekBufferPositive, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
@@ -167,11 +160,12 @@ int main_thread(SceSize args, void *argp){
 	sceKernelDcacheWritebackAll();
 	sceKernelIcacheClearAll();
 	LOG("main thread finishes\n");
+	return 0;
 }
 
 void init(){
 	#if DEBUG
-	logfd = sceIoOpen( "ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT|PSP_O_APPEND, 0777);
+	logfd = sceIoOpen( "ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT, 0777);
 	#endif
 
 	LOG("module started, moving onto a thread\n");
@@ -182,7 +176,6 @@ void init(){
 	}
 	sceKernelStartThread(thid, 0, NULL);
 	LOG("main thread started\n");
-	sceKernelDeleteThread(thid);
 }
 
 int OnModuleStart(SceModule2 *mod) {

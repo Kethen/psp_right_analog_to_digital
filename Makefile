@@ -8,10 +8,13 @@ ASFLAGS = $(CFLAGS)
 BUILD_PRX = 1
 PRX_EXPORTS = exports.exp
 
-USE_KERNEL_LIBC = 1
-USE_KERNEL_LIBS = 1
+# these do not seem to be available anymore..?
+#USE_KERNEL_LIBC = 0
+#USE_PSPSDK_LIBC = 1
+#USE_KERNEL_LIBS = 1
 
-LIBS = -lpspsystemctrl_kernel
+# use built-in libc to supply sprintf for now since ppsspp has not implemented that
+LIBS = -lc -lpspsystemctrl_kernel
 
 PSPSDK = $(shell psp-config --pspsdk-path)
 include $(PSPSDK)/lib/build_prx.mak
