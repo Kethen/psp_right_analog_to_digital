@@ -68,6 +68,7 @@ if(logfd > 0){ \
 { \
   LOG("hijacking function at 0x%lx with 0x%lx\n", (u32)a, (u32)f); \
   u32 _func_ = (u32)a; \
+  LOG("original instructions: 0x%lx 0x%lx 0x%lx\n", _lw(_func_), _lw(_func_ + 4), _lw(_func_ + 8)); \
   u32 ff = (u32)f; \
   if(!is_emulator){ \
     ff = MakeSyscallStub(f); \
@@ -196,6 +197,13 @@ int main_thread(SceSize args, void *argp){
 		return 1;
 	}
 
+	// it seems that these location are JR SYSCALL, at least on PPSSPP
+	// which means a 3 instructions loader won't work properly, eventhough it should still kinda work
+	// given joysens hooks by messing with the immediate JAL from the linked function, I'd assume this is a PPSSPP difference
+	// (could it also be.. nah it's JR SYSCALL, so it'll run SYSCALL then JR, things after that don't matter)
+	// messing with the linked function also does not affect games in PPSSPP so perhaps the stubs are not even shared between modules
+	// hmm what to do
+
 	HIJACK_FUNCTION(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
 	HIJACK_FUNCTION(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
 	HIJACK_FUNCTION(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
@@ -204,7 +212,7 @@ int main_thread(SceSize args, void *argp){
 	sceKernelDcacheWritebackAll();
 	sceKernelIcacheClearAll();
 
-	while(1){
+	while(0){
 		sceKernelDelayThread(1000 * 16);
 
 		SceCtrlData buf[200];
