@@ -57,7 +57,7 @@ static unsigned int xn_btn = 0;
 static unsigned char outer_deadzone = 20;
 static unsigned char inner_deadzone = 10;
 
-static u32 window = 16; // frame
+static u32 window = 8; // frame
 
 // is there a flush..? or the non async version always syncs?
 #define DEBUG 1
@@ -477,7 +477,7 @@ static void read_config(char *disc_id, int disc_id_valid){
 	}
 
 	int i;
-	for(i = 0;i < AXIS_CNT + 1; i++){
+	for(i = 0;i < AXIS_CNT + 2; i++){
 		int j;
 		char readbuf[50];
 		for(j = 0;j < 50; j++){
@@ -498,13 +498,21 @@ static void read_config(char *disc_id, int disc_id_valid){
 		}
 		if(i < AXIS_CNT){
 			map_button(readbuf, i);
-		}else{
+		}else if(i == AXIS_CNT){
 			int config_window = atoi(readbuf);
 			if(config_window != 0){
 				LOG("setting button inject window to %s samples\n", readbuf);
 				window = config_window;
 			}else{
 				LOG("bad button inject window input %s\n", readbuf);
+			}
+		}else{
+			int controller_sampling_cycle = atoi(readbuf);
+			if(controller_sampling_cycle >= 5555 && controller_sampling_cycle <= 20000){
+				LOG("setting controller sampling cycle to %d\n", controller_sampling_cycle);
+				sceCtrlSetSamplingCycle(controller_sampling_cycle);
+			}else{
+				LOG("not setting controller sampling cycle to %s, invalid value\n", readbuf);
 			}
 		}
 	}
@@ -516,8 +524,7 @@ int main_thread(SceSize args, void *argp){
 	LOG("main thread begins\n");
 
 	sceKernelDelayThread(1000 * 1000 * 5);
-	LOG("changing polling rate and forcing analog mode");
-	sceCtrlSetSamplingCycle(5555);
+	LOG("forcing analog sampling mode");
 	sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
 	char disc_id[50];
