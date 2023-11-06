@@ -53,6 +53,8 @@ static unsigned int yp_btn = PSP_CTRL_LTRIGGER;
 static unsigned int yn_btn = PSP_CTRL_RTRIGGER;
 static unsigned int xp_btn = 0;
 static unsigned int xn_btn = 0;
+static unsigned char outer_deadzone = 20;
+static unsigned char inner_deadzone = 10;
 
 // hook sceCtrlSetSamplingCycle or call sceCtrlGetSamplingCycle for this?
 static unsigned int window = 8;
@@ -145,9 +147,21 @@ if(logfd > 0){ \
 }
 
 static int button_on(int val, int n, int w){
-	int slice = (val * w) / 127;
+	int max_val = (127 - outer_deadzone) - (inner_deadzone);
+	if(max_val <= 0){
+		return 0;
+	}
+	if(val < inner_deadzone){
+		val = 0;
+	}else{
+		val = val - inner_deadzone;
+	}
+	if(val > max_val){
+		val = max_val;
+	}
+	int slice = (val * (w - 1)) / max_val;
 	LOG_VERBOSE("val is %d, w is %d, n is %d, slice is %d\n", val, w, n, slice);
-	if(slice + 1 >= n){
+	if(slice >= n){
 		return 1;
 	}
 	return 0;
