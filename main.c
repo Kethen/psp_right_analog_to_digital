@@ -27,7 +27,9 @@
 
 #include <systemctrl.h>
 
-PSP_MODULE_INFO("ra2d", 0x1007, 1, 0);
+#define MODULE_NAME "ra2d"
+
+PSP_MODULE_INFO(MODULE_NAME, 0x1007, 1, 0);
 
 int sceKernelQuerySystemCall(void *function);
 
@@ -64,22 +66,59 @@ if(logfd > 0){ \
 
 #define MAKE_JUMP(a, f) _sw(0x08000000 | (((u32)(f) & 0x0FFFFFFC) >> 2), a);
 
+// jacking JR_SYSCALL in ppsspp, so just save the two instructions
+// also scan other modules for the same pattern and patch them if ppsspp
 #define HIJACK_FUNCTION(a, f, ptr) \
 { \
   LOG("hijacking function at 0x%lx with 0x%lx\n", (u32)a, (u32)f); \
   u32 _func_ = (u32)a; \
-  LOG("original instructions: 0x%lx 0x%lx 0x%lx\n", _lw(_func_), _lw(_func_ + 4), _lw(_func_ + 8)); \
+  LOG("original instructions: 0x%lx 0x%lx\n", _lw(_func_), _lw(_func_ + 4)); \
+  u32 pattern[2]; \
+  _sw(_lw(_func_), (u32)pattern); \
+  _sw(_lw(_func_ + 4), (u32)pattern + 4); \
   u32 ff = (u32)f; \
   if(!is_emulator){ \
     ff = MakeSyscallStub(f); \
   } \
   static u32 patch_buffer[3]; \
-  _sw(_lw(_func_), (u32)patch_buffer); \
-  _sw(_lw(_func_ + 4), (u32)patch_buffer + 8);\
-  MAKE_JUMP((u32)patch_buffer + 4, _func_ + 8); \
+  if(!is_emulator){ \
+    _sw(_lw(_func_), (u32)patch_buffer); \
+    _sw(_lw(_func_ + 4), (u32)patch_buffer + 8);\
+    MAKE_JUMP((u32)patch_buffer + 4, _func_ + 8); \
+  }else{ \
+    _sw(_lw(_func_), (u32)patch_buffer); \
+    _sw(_lw(_func_ + 4), (u32)patch_buffer + 4); \
+  } \
   _sw(0x08000000 | (((u32)(ff) >> 2) & 0x03FFFFFF), _func_); \
   _sw(0, _func_ + 4); \
   ptr = (void *)patch_buffer; \
+  if(is_emulator){ \
+    SceUID modules[32]; \
+    SceKernelModuleInfo info; \
+    int i, count = 0; \
+    if (sceKernelGetModuleIdList(modules, sizeof(modules), &count) >= 0) { \
+      for (i = 0; i < count; i++) { \
+        info.size = sizeof(SceKernelModuleInfo); \
+        if (sceKernelQueryModuleInfo(modules[i], &info) < 0) { \
+          continue; \
+        } \
+        if (strcmp(info.name, MODULE_NAME) == 0) { \
+          continue; \
+        } \
+        LOG("scanning module %s in ppsspp mode\n", info.name); \
+        LOG("info.text_addr: 0x%x info.text_size: 0x%x\n", info.text_addr, info.text_size); \
+        u32 k; \
+        for(k = 0; k < info.text_size; k+=4){ \
+          u32 addr = k + info.text_addr; \
+          if(/*_lw((u32)pattern) == _lw(addr + 0) &&*/ _lw((u32)pattern + 4) == _lw(addr + 4)){ \
+            LOG("found instruction pattern 0x%lx 0x%lx at 0x%lx, patching\n", pattern[0], pattern[1], addr); \
+            _sw(0x08000000 | (((u32)(ff) >> 2) & 0x03FFFFFF), addr); \
+            _sw(0, addr + 4); \
+          } \
+        } \
+      } \
+    } \
+  } \
 }
 
 void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
@@ -167,7 +206,7 @@ int main_thread(SceSize args, void *argp){
 
 	// probably read config here
 
-	sceKernelDelayThread(10000);
+	sceKernelDelayThread(1000 * 1000 * 5);
 
 	log_modules();
 
@@ -198,7 +237,6 @@ int main_thread(SceSize args, void *argp){
 	}
 
 	// it seems that these location are JR SYSCALL, at least on PPSSPP
-	// which means a 3 instructions loader won't work properly, eventhough it should still kinda work
 	// given joysens hooks by messing with the immediate JAL from the linked function, I'd assume this is a PPSSPP difference
 	// (could it also be.. nah it's JR SYSCALL, so it'll run SYSCALL then JR, things after that don't matter)
 	// messing with the linked function also does not affect games in PPSSPP so perhaps the stubs are not even shared between modules
@@ -230,7 +268,6 @@ void init(){
 	#endif
 
 	LOG("module started\n");
-	LOG("not on ppsspp, start main thread\n");
 	SceUID thid = sceKernelCreateThread("ra2d", main_thread, 0x18, 4*1024, 0, NULL);
 	if(thid < 0){
 		LOG("failed creating main thread\n")
