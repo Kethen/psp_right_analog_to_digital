@@ -57,7 +57,7 @@ static unsigned char outer_deadzone = 20;
 static unsigned char inner_deadzone = 10;
 
 // hook sceCtrlSetSamplingCycle or call sceCtrlGetSamplingCycle for this?
-static unsigned int window = 8;
+static u32 window = 8; // frame
 
 // is there a flush..? or the non async version always syncs?
 #define DEBUG 1
@@ -146,28 +146,28 @@ if(logfd > 0){ \
   } \
 }
 
-static int button_on(int val, int n, int w){
+static int button_on(int val, u32 timestamp, u32 w){
 	int max_val = (127 - outer_deadzone) - (inner_deadzone);
 	if(max_val <= 0){
 		return 0;
 	}
 	if(val < inner_deadzone){
-		val = 0;
+		return 0;
 	}else{
 		val = val - inner_deadzone;
 	}
 	if(val > max_val){
 		val = max_val;
 	}
-	int slice = (val * (w - 1)) / max_val;
-	LOG_VERBOSE("val is %d, w is %d, n is %d, slice is %d\n", val, w, n, slice);
-	if(slice >= n){
-		return 1;
+	u32 slice = 1 + (val * (w - 1)) / max_val;
+	if(slice <= 0){
+		return 0;
 	}
-	return 0;
+	u32 n = timestamp % w + 1;
+	LOG_VERBOSE("val is %d, w is %ld, n is %ld, slice is %ld\n", val, w, n, slice);
+	return slice >= n;
 }
 
-static int nth_value;
 static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
 	if(count < 1){
 		LOG("count is %d, processing skipped\n", count);
@@ -178,15 +178,14 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 
 	int i;
 	for(i = 0;i < count; i++){
-		nth_value = (nth_value + 1) % window;
 		int buttons = negative ? ~pad_data[i].Buttons : pad_data[i].Buttons;
 		int rx = pad_data[i].Rsrv[0];
 		int ry = pad_data[i].Rsrv[1];
-		//int timestamp = pad_data->TimeStamp;
+		u32 timestamp = pad_data->TimeStamp;
 
 		if(rx > 128){
 			int val = rx - 128;
-			if(button_on(val, nth_value, window))
+			if(button_on(val, timestamp, window))
 				buttons |= xp_btn;
 		}
 		if(rx < 128){
@@ -194,12 +193,12 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 			if(val == 128){
 				val = 127;
 			}
-			if(button_on(val, nth_value, window))
+			if(button_on(val, timestamp, window))
 				buttons |= xn_btn;
 		}
 		if(ry > 128){
 			int val = ry - 128;
-			if(button_on(val, nth_value, window))
+			if(button_on(val, timestamp, window))
 				buttons |= yp_btn;
 		}
 		if(ry < 128){
@@ -207,7 +206,7 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 			if(val == 128){
 				val = 127;
 			}
-			if(button_on(val, nth_value, window))
+			if(button_on(val, timestamp, window))
 				buttons |= yn_btn;
 		}
 
