@@ -55,7 +55,7 @@ static unsigned int xp_btn = 0;
 static unsigned int xn_btn = 0;
 
 // hook sceCtrlSetSamplingCycle or call sceCtrlGetSamplingCycle for this?
-static unsigned int window = 7;
+static unsigned int window = 8;
 
 // is there a flush..? or the non async version always syncs?
 #define DEBUG 1
@@ -72,7 +72,13 @@ if(logfd > 0){ \
 #else // DEBUG
 #define LOG(...)
 #endif // DEBUG
-// what to do about latch? how to achieve the same?
+#define VERBOSE 0
+#if VERBOSE
+#define LOG_VERBOSE(...) LOG(__VA_ARGS__)
+#else // VERBOSE
+#define LOG_VERBOSE(...)
+#endif // VERBOSE
+
 
 #define MAKE_JUMP(a, f) _sw(0x08000000 | (((u32)(f) & 0x0FFFFFFC) >> 2), a);
 
@@ -139,8 +145,9 @@ if(logfd > 0){ \
 }
 
 static int button_on(int val, int n, int w){
-	int slice = (float)(val * w) / 127.0f;
-	if(slice > n){
+	int slice = (val * w) / 127;
+	LOG_VERBOSE("val is %d, w is %d, n is %d, slice is %d\n", val, w, n, slice);
+	if(slice + 1 >= n){
 		return 1;
 	}
 	return 0;
@@ -153,7 +160,7 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 		return;
 	}
 
-	LOG("processing %d buffers in %s mode\n", count, negative? "negative" : "positive")
+	LOG_VERBOSE("processing %d buffers in %s mode\n", count, negative? "negative" : "positive");
 
 	int i;
 	for(i = 0;i < count; i++){
@@ -190,7 +197,7 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 				buttons |= yn_btn;
 		}
 
-		//LOG("timestamp: %d rx: %d ry: %d\n", timestamp, rx, ry);
+		LOG_VERBOSE("timestamp: %d rx: %d ry: %d\n", timestamp, rx, ry);
 		pad_data[i].Buttons = negative ? ~buttons : buttons;
 	}
 }
