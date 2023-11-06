@@ -1,6 +1,7 @@
 /*
-  Remastered Controls: Metal Gear Solid
+  Remastered Controls: analog to digital
   Copyright (C) 2018, TheFloW
+  Copyright (C) 2023, Katharine Chui
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -46,6 +47,15 @@ static u32 MakeSyscallStub(void *function) {
   _sw(0x0000000C | (sceKernelQuerySystemCall(function) << 6), stub + 4);
   return stub;
 }
+
+// to be set by config
+static unsigned int yp_btn = PSP_CTRL_LTRIGGER;
+static unsigned int yn_btn = PSP_CTRL_RTRIGGER;
+static unsigned int xp_btn = 0;
+static unsigned int xn_btn = 0;
+
+// hook sceCtrlSetSamplingCycle or call sceCtrlGetSamplingCycle for this?
+static unsigned int window = 7;
 
 // is there a flush..? or the non async version always syncs?
 #define DEBUG 1
@@ -128,7 +138,16 @@ if(logfd > 0){ \
   } \
 }
 
-void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
+static int button_on(int val, int n, int w){
+	int slice = (float)(val * w) / 127.0f;
+	if(slice > n){
+		return 1;
+	}
+	return 0;
+}
+
+static int nth_value;
+static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
 	if(count < 1){
 		LOG("count is %d, processing skipped\n", count);
 		return;
@@ -138,12 +157,40 @@ void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negative){
 
 	int i;
 	for(i = 0;i < count; i++){
+		nth_value = (nth_value + 1) % window;
 		int buttons = negative ? ~pad_data[i].Buttons : pad_data[i].Buttons;
 		int rx = pad_data[i].Rsrv[0];
 		int ry = pad_data[i].Rsrv[1];
-		int timestamp = pad_data->TimeStamp;
+		//int timestamp = pad_data->TimeStamp;
 
-		LOG("timestamp: %d rx: %d ry: %d\n", timestamp, rx, ry);
+		if(rx > 128){
+			int val = rx - 128;
+			if(button_on(val, nth_value, window))
+				buttons |= xp_btn;
+		}
+		if(rx < 128){
+			int val = 128 - rx;
+			if(val == 128){
+				val = 127;
+			}
+			if(button_on(val, nth_value, window))
+				buttons |= xn_btn;
+		}
+		if(ry > 128){
+			int val = ry - 128;
+			if(button_on(val, nth_value, window))
+				buttons |= yp_btn;
+		}
+		if(ry < 128){
+			int val = 128 - ry;
+			if(val == 128){
+				val = 127;
+			}
+			if(button_on(val, nth_value, window))
+				buttons |= yn_btn;
+		}
+
+		//LOG("timestamp: %d rx: %d ry: %d\n", timestamp, rx, ry);
 		pad_data[i].Buttons = negative ? ~buttons : buttons;
 	}
 }
