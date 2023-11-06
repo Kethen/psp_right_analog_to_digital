@@ -66,11 +66,15 @@ if(logfd > 0){ \
 
 #define MAKE_JUMP(a, f) _sw(0x08000000 | (((u32)(f) & 0x0FFFFFFC) >> 2), a);
 
-// jacking JR_SYSCALL in ppsspp, so just save the two instructions
+#define GET_JUMP_TARGET(x) (0x80000000 | (((x) & 0x03FFFFFF) << 2))
+
+// jacking JR_SYSCALL in ppsspp, so just save the two instructions, instead of seeking the target
 // also scan other modules for the same pattern and patch them if ppsspp
-#define HIJACK_FUNCTION(a, f, ptr) \
+// for real hw, go the jump target then attempt the more standard two instructions hijack
+// hopefully works with the static args loaded sceCtrl functions, at least referencing uofw and joysens
+#define HIJACK_JMP_FUNCTION(a, f, ptr) \
 { \
-  LOG("hijacking function at 0x%lx with 0x%lx\n", (u32)a, (u32)f); \
+  LOG("hijacking jmp function at 0x%lx with 0x%lx\n", (u32)a, (u32)f); \
   u32 _func_ = (u32)a; \
   LOG("original instructions: 0x%lx 0x%lx\n", _lw(_func_), _lw(_func_ + 4)); \
   u32 pattern[2]; \
@@ -79,15 +83,18 @@ if(logfd > 0){ \
   u32 ff = (u32)f; \
   if(!is_emulator){ \
     ff = MakeSyscallStub(f); \
+    _func_ = GET_JUMP_TARGET(_lw(a)); \
+    LOG("real hardware mode, making syscall stub 0x%lx and retargetting function 0x%lx\n", ff, _func_); \
+    LOG("original instructions: 0x%lx 0x%lx\n", _lw(_func_), _lw(_func_ + 4)); \
   } \
   static u32 patch_buffer[3]; \
-  if(!is_emulator){ \
-    _sw(_lw(_func_), (u32)patch_buffer); \
-    _sw(_lw(_func_ + 4), (u32)patch_buffer + 8);\
-    MAKE_JUMP((u32)patch_buffer + 4, _func_ + 8); \
-  }else{ \
+  if(is_emulator){ \
     _sw(_lw(_func_), (u32)patch_buffer); \
     _sw(_lw(_func_ + 4), (u32)patch_buffer + 4); \
+  }else{ \
+    _sw(_lw(_func_), (u32)patch_buffer); \
+    _sw(_lw(_func_ + 4), (u32)patch_buffer + 8); \
+    MAKE_JUMP((u32)patch_buffer + 4, _func_ + 8); \
   } \
   _sw(0x08000000 | (((u32)(ff) >> 2) & 0x03FFFFFF), _func_); \
   _sw(0, _func_ + 4); \
@@ -242,10 +249,10 @@ int main_thread(SceSize args, void *argp){
 	// messing with the linked function also does not affect games in PPSSPP so perhaps the stubs are not even shared between modules
 	// hmm what to do
 
-	HIJACK_FUNCTION(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
-	HIJACK_FUNCTION(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
-	HIJACK_FUNCTION(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
-	HIJACK_FUNCTION(sceCtrlPeekBufferNegative_addr, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
+	HIJACK_JMP_FUNCTION(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
+	HIJACK_JMP_FUNCTION(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
+	HIJACK_JMP_FUNCTION(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
+	HIJACK_JMP_FUNCTION(sceCtrlPeekBufferNegative_addr, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
 
 	sceKernelDcacheWritebackAll();
 	sceKernelIcacheClearAll();
