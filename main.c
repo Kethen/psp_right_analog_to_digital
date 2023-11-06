@@ -146,6 +146,125 @@ if(logfd > 0){ \
   } \
 }
 
+#define CONV_LE(addr, dest) { \
+	dest = addr[0] | addr[1] << 8 | addr[2] << 16 | addr[3] << 24; \
+}
+
+#define CONV_LE16(addr, dest) { \
+	dest = addr[0] | addr[1] << 8; \
+}
+
+static int get_disc_id(char *out_buf){
+	char *sfo_path = "disc0:/PSP_GAME/PARAM.SFO";
+	int fd = sceIoOpen(sfo_path, PSP_O_RDONLY,0);
+	if(fd <= 0){
+		LOG("cannot open %s for reading\n", sfo_path);
+		return -1;
+	}
+
+	sceIoLseek(fd, 0x08, PSP_SEEK_SET);
+	unsigned char buf[4];
+	if(sceIoRead(fd, &buf, 4) != 4){
+		sceIoClose(fd);
+		LOG("failed reading key table start from sfo\n");
+		return -1;
+	}
+	u32 key_table_start = 0;
+	CONV_LE(buf, key_table_start);
+	LOG_VERBOSE("key_table_start is %ld\n", key_table_start);
+
+	if(sceIoRead(fd, &buf, 4) != 4){
+		sceIoClose(fd);
+		LOG("failed reading data table start from sfo\n");
+		return -1;
+	}
+	u32 data_table_start = 0;
+	CONV_LE(buf, data_table_start);
+	LOG_VERBOSE("data_table_start is %ld\n", data_table_start);
+
+	if(sceIoRead(fd, &buf, 4) != 4){
+		sceIoClose(fd);
+		LOG("failed reading tables entries from sfo\n");
+		return -1;
+	}
+	u32 tables_entries = 0;
+	CONV_LE(buf, tables_entries);
+	LOG_VERBOSE("tables_entries is %ld\n", tables_entries);
+
+	int i;
+	for(i = 0;i < tables_entries;i++){
+		sceIoLseek(fd, 0x14 + i * 0x10, PSP_SEEK_SET);
+		if(sceIoRead(fd, &buf, 2) != 2){
+			sceIoClose(fd);
+			LOG("failed reading key offset from sfo\n");
+			return -1;
+		}
+		u32 key_offset = 0;
+		CONV_LE16(buf, key_offset);
+
+		if(sceIoRead(fd, &buf, 2) != 2){
+			sceIoClose(fd);
+			LOG("failed reading data format from sfo\n");
+			return -1;
+		}
+		u32 data_format = 0;
+		CONV_LE16(buf, data_format);
+
+		if(sceIoRead(fd, &buf, 4) != 4){
+			sceIoClose(fd);
+			LOG("failed reading data len from sfo\n");
+			return -1;
+		}
+		u32 data_len = 0;
+		CONV_LE(buf, data_len);
+
+		sceIoLseek(fd, 4, PSP_SEEK_CUR);
+		if(sceIoRead(fd, &buf, 4) != 4){
+			sceIoClose(fd);
+			LOG("failed reading data offset from sfo\n");
+			return -1;
+		}
+		u32 data_offset = 0;
+		CONV_LE(buf, data_offset);
+
+		sceIoLseek(fd, key_offset + key_table_start, PSP_SEEK_SET);
+		char keybuf[50];
+		int j;
+		for(j = 0;j < 50;j++){
+			if(sceIoRead(fd, &keybuf[j], 1) != 1){
+				sceIoClose(fd);
+				LOG("failed reading key from sfo\n");
+			}
+			if(keybuf[j] == 0){
+				break;
+			}
+		}
+		LOG_VERBOSE("key is %s\n", keybuf);
+
+		sceIoLseek(fd, data_offset + data_table_start, PSP_SEEK_SET);
+		char databuf[data_len];
+		for(j = 0;j < data_len; j++){
+			if(sceIoRead(fd, &databuf[j], 1) != 1){
+				sceIoClose(fd);
+				LOG("failed reading data from sfo\n");
+			}
+		}
+		if(data_format == 0x0204){
+			LOG_VERBOSE("utf8 data: %s\n", databuf);
+		}else{
+			LOG_VERBOSE("data is not utf8, not printing\n");
+		}
+
+		if(strncmp("DISC_ID", keybuf, 50) == 0){
+			strcpy(out_buf, databuf);
+			break;
+		}
+	}
+
+	sceIoClose(fd);
+	return 0;
+}
+
 static int button_on(int val, u32 timestamp, u32 w){
 	int max_val = (127 - outer_deadzone) - (inner_deadzone);
 	if(max_val <= 0){
@@ -278,11 +397,19 @@ static void log_modules(){
 int main_thread(SceSize args, void *argp){
 	LOG("main thread begins\n");
 
-	// probably read config here
-
 	sceKernelDelayThread(1000 * 1000 * 5);
+	char disc_id[50];
+	int disc_id_valid = get_disc_id(disc_id) == 0;
+	if(disc_id_valid){
+		LOG("disc id is %s\n", disc_id);
+	}else{
+		LOG("cannot find disc id from sfo\n");
+	}
+	// probably read config here now that disc id is found
 
-	log_modules();
+	if(is_emulator){
+		log_modules();
+	}
 
 	// hooking this linked addr does not do anything on ppsspp, but joysens' implementation suggests that it works on real hw?
 	u32 sceCtrlReadBufferPositive_addr = (u32)sceCtrlReadBufferPositive;
@@ -338,7 +465,7 @@ int main_thread(SceSize args, void *argp){
 
 void init(){
 	#if DEBUG
-	logfd = sceIoOpen( "ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC, 0777);
+	logfd = sceIoOpen("ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC, 0777);
 	#endif
 
 	LOG("module started\n");
