@@ -56,8 +56,7 @@ static unsigned int xn_btn = 0;
 static unsigned char outer_deadzone = 20;
 static unsigned char inner_deadzone = 10;
 
-// hook sceCtrlSetSamplingCycle or call sceCtrlGetSamplingCycle for this?
-static u32 window = 8; // frame
+static u32 window = 16; // frame
 
 // is there a flush..? or the non async version always syncs?
 #define DEBUG 1
@@ -394,11 +393,12 @@ static void log_modules(){
 	}
 }
 
+// up down left right
 enum axis_names{
-	AXIS_XP = 0,
-	AXIS_XN = 1,
-	AXIS_YP = 2,
-	AXIS_YN = 3,
+	AXIS_YN = 0,
+	AXIS_YP = 1,
+	AXIS_XN = 2,
+	AXIS_XP = 3,
 	AXIS_CNT = 4
 };
 
@@ -496,6 +496,10 @@ int main_thread(SceSize args, void *argp){
 	LOG("main thread begins\n");
 
 	sceKernelDelayThread(1000 * 1000 * 5);
+	LOG("changing polling rate and forcing analog mode");
+	sceCtrlSetSamplingCycle(5555);
+	sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
+
 	char disc_id[50];
 	int disc_id_valid = get_disc_id(disc_id) == 0;
 	if(disc_id_valid){
@@ -591,7 +595,6 @@ static void CheckModules() {
 }
 
 int module_start(SceSize args, void *argp) {
-  sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
   is_emulator = sceIoDevctl("kemulator:", EMULATOR_DEVCTL__IS_EMULATOR, NULL, 0, NULL, 0) == 0;
   if (is_emulator) {
     // Just scan the modules using normal/official syscalls.
