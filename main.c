@@ -130,7 +130,16 @@ if(logfd > 0){ \
           continue; \
         } \
         LOG("scanning module %s in ppsspp mode\n", info.name); \
-        LOG("info.text_addr: 0x%x info.text_size: 0x%x\n", info.text_addr, info.text_size); \
+        LOG("info.text_addr: 0x%x info.text_size: 0x%x info.nsegment: 0x%x\n", info.text_addr, info.text_size, (int)info.nsegment); \
+        u32 j; \
+        for(j = 0;j < info.nsegment; j++){ \
+          LOG("info.segmentaddr[%ld]: 0x%x info.segmentsize[%ld]: 0x%x\n", j, info.segmentaddr[j], j, info.segmentsize[j]); \
+        } \
+        if(info.text_size == 0){ \
+          if(info.nsegment >= 1 && info.segmentaddr[0] == info.text_addr){ \
+            info.text_size = info.segmentsize[0]; \
+          } \
+        } \
         u32 k; \
         for(k = 0; k < info.text_size; k+=4){ \
           u32 addr = k + info.text_addr; \
