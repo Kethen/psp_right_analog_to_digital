@@ -72,7 +72,7 @@ if(logfd > 0){ \
 // also scan other modules for the same pattern and patch them if ppsspp
 // for real hw, go the jump target then attempt the more standard two instructions hijack
 // hopefully works with the static args loaded sceCtrl functions, at least referencing uofw and joysens
-#define HIJACK_JMP_FUNCTION(a, f, ptr) \
+#define HIJACK_SYSCALL_STUB(a, f, ptr) \
 { \
   LOG("hijacking jmp function at 0x%lx with 0x%lx\n", (u32)a, (u32)f); \
   u32 _func_ = (u32)a; \
@@ -249,10 +249,10 @@ int main_thread(SceSize args, void *argp){
 	// messing with the linked function also does not affect games in PPSSPP so perhaps the stubs are not even shared between modules
 	// hmm what to do
 
-	HIJACK_JMP_FUNCTION(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
-	HIJACK_JMP_FUNCTION(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
-	HIJACK_JMP_FUNCTION(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
-	HIJACK_JMP_FUNCTION(sceCtrlPeekBufferNegative_addr, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
+	HIJACK_SYSCALL_STUB(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
+	HIJACK_SYSCALL_STUB(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
+	HIJACK_SYSCALL_STUB(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
+	HIJACK_SYSCALL_STUB(sceCtrlPeekBufferNegative_addr, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
 
 	sceKernelDcacheWritebackAll();
 	sceKernelIcacheClearAll();
