@@ -49,8 +49,8 @@ static u32 MakeSyscallStub(void *function) {
 }
 
 // to be set by config
-static unsigned int yp_btn = PSP_CTRL_LTRIGGER;
-static unsigned int yn_btn = PSP_CTRL_RTRIGGER;
+static unsigned int yp_btn = PSP_CTRL_SQUARE;
+static unsigned int yn_btn = PSP_CTRL_CROSS;
 static unsigned int xp_btn = 0;
 static unsigned int xn_btn = 0;
 static unsigned char outer_deadzone = 20;
@@ -394,6 +394,104 @@ static void log_modules(){
 	}
 }
 
+enum axis_names{
+	AXIS_XP = 0,
+	AXIS_XN = 1,
+	AXIS_YP = 2,
+	AXIS_YN = 3,
+	AXIS_CNT = 4
+};
+
+static void map_button(char *string, int axis){
+	char *axis_name;
+	switch(axis){
+		case AXIS_XP:
+			axis_name = "x positive";
+			break;
+		case AXIS_XN:
+			axis_name = "x negative";
+			break;
+		case AXIS_YP:
+			axis_name = "y positive";
+			break;
+		case AXIS_YN:
+			axis_name = "y negative";
+			break;
+	}
+
+	int button = -1;
+	#define STRING_BTN_PAIR(str, btn){ \
+		if(strcmp(string, str) == 0){ \
+			LOG("mapping %s to %s\n", axis_name, string); \
+			button = btn; \
+		} \
+	}
+	STRING_BTN_PAIR("up", PSP_CTRL_UP);
+	STRING_BTN_PAIR("right", PSP_CTRL_RIGHT);
+	STRING_BTN_PAIR("down", PSP_CTRL_DOWN);
+	STRING_BTN_PAIR("left", PSP_CTRL_LEFT);
+	STRING_BTN_PAIR("ltrigger", PSP_CTRL_LTRIGGER);
+	STRING_BTN_PAIR("rtrigger", PSP_CTRL_RTRIGGER);
+	STRING_BTN_PAIR("triangle", PSP_CTRL_TRIANGLE);
+	STRING_BTN_PAIR("circle", PSP_CTRL_CIRCLE);
+	STRING_BTN_PAIR("cross", PSP_CTRL_CROSS);
+	STRING_BTN_PAIR("square", PSP_CTRL_SQUARE);
+	STRING_BTN_PAIR("none", 0);
+
+	if(button != -1){
+		switch(axis){
+			case AXIS_XP:
+				xp_btn = button;
+				return;
+			case AXIS_XN:
+				xn_btn = button;
+				return;
+			case AXIS_YP:
+				yp_btn = button;
+				return;
+			case AXIS_YN:
+				yn_btn = button;
+				return;
+		}
+	}
+	LOG("unrecognized button %s while trying to map %s\n", string, axis_name);
+}
+
+static void read_config(char *disc_id, int disc_id_valid){
+	char path[100];
+	sprintf(path, "ms0:/PSP/ra2d_conf/%s", disc_id_valid ? disc_id: "homebrew");
+	int fd = sceIoOpen(path, PSP_O_RDONLY, 0777);
+	if(fd <= 0){
+		LOG("cannot load config from %s\n", path);
+		return;
+	}
+
+	int i;
+	for(i = 0;i < AXIS_CNT; i++){
+		int j;
+		char readbuf[50];
+		for(j = 0;j < 50; j++){
+			if(sceIoRead(fd, &readbuf[j], 1) != 1){
+				LOG("bad config file\n");
+				sceIoClose(fd);
+				return;
+			}
+			if(readbuf[j] == ' ' || readbuf[j] == '\r' || readbuf[j] == '\n'){
+				readbuf[j] = '\0';
+				break;
+			}
+		}
+		if(readbuf[j] != '\0'){
+			LOG("bad config file with long button name\n");
+			sceIoClose(fd);
+			return;
+		}
+		map_button(readbuf, i);
+	}
+
+	sceIoClose(fd);
+}
+
 int main_thread(SceSize args, void *argp){
 	LOG("main thread begins\n");
 
@@ -405,7 +503,7 @@ int main_thread(SceSize args, void *argp){
 	}else{
 		LOG("cannot find disc id from sfo\n");
 	}
-	// probably read config here now that disc id is found
+	read_config(disc_id, disc_id_valid);
 
 	if(is_emulator){
 		log_modules();
