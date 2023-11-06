@@ -563,7 +563,7 @@ int main_thread(SceSize args, void *argp){
 
 void init(){
 	#if DEBUG
-	logfd = sceIoOpen("ms0:/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC, 0777);
+	logfd = sceIoOpen("ms0:/PSP/ra2d.log", PSP_O_WRONLY|PSP_O_CREAT|PSP_O_TRUNC, 0777);
 	#endif
 
 	LOG("module started\n");
