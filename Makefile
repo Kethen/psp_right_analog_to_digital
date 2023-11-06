@@ -13,7 +13,7 @@ PRX_EXPORTS = exports.exp
 #USE_PSPSDK_LIBC = 1
 #USE_KERNEL_LIBS = 1
 
-# use built-in libc to supply sprintf for now since ppsspp has not implemented that
+# use built-in libc to supply sprintf for ppsspp and atoi in general
 LIBS = -lc -lpspsystemctrl_kernel
 
 PSPSDK = $(shell psp-config --pspsdk-path)

@@ -24,6 +24,7 @@
 #include <pspthreadman.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <systemctrl.h>
@@ -476,7 +477,7 @@ static void read_config(char *disc_id, int disc_id_valid){
 	}
 
 	int i;
-	for(i = 0;i < AXIS_CNT; i++){
+	for(i = 0;i < AXIS_CNT + 1; i++){
 		int j;
 		char readbuf[50];
 		for(j = 0;j < 50; j++){
@@ -495,7 +496,17 @@ static void read_config(char *disc_id, int disc_id_valid){
 			sceIoClose(fd);
 			return;
 		}
-		map_button(readbuf, i);
+		if(i < AXIS_CNT){
+			map_button(readbuf, i);
+		}else{
+			int config_window = atoi(readbuf);
+			if(config_window != 0){
+				LOG("setting button inject window to %s samples\n", readbuf);
+				window = config_window;
+			}else{
+				LOG("bad button inject window input %s\n", readbuf);
+			}
+		}
 	}
 
 	sceIoClose(fd);
