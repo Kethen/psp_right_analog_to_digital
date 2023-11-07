@@ -512,7 +512,7 @@ static void read_config(char *disc_id, int disc_id_valid){
 			map_button(readbuf, i);
 		}else if(i == AXIS_CNT){
 			int config_window = atoi(readbuf);
-			if(config_window != 0){
+			if(config_window > 0){
 				LOG("setting button inject window to %s samples\n", readbuf);
 				window = config_window;
 			}else{
