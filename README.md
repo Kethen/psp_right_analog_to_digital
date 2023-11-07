@@ -7,7 +7,7 @@ A more elegant solution for individual games would be to reverse them to find th
 ### Usage
 
 - load prx with game, see https://www.ppsspp.org/docs/reference/plugins/ for ppsspp
-- be sure to map right analog stick in ppsspp settings, note that it is possible to map analog triggers to them
+- be sure to map right analog stick directions in ppsspp settings, note that it is possible to map analog triggers to them
 - the hooking code may or may not work with a vita, don't have one to test, refer to how one can load psp prx plugins over there
 
 ### Config files
@@ -82,12 +82,13 @@ How the game behaves depends on how they handle fast button flips, whether a but
 ### Notes
 
 - spamming button input general don't work well with camera controls, games don't really smooth out repeated button presses. While you can get slowed down camera movement, it'll usually be choppy
-- somes games relies on sceCtrlSetSamplingCycle, more specificly sceCtrlReadBuffer* to maintain game/game physics speed, so a sceCtrlSetSamplingCycle override cannot be applied to those
+- somes games rely on sceCtrlSetSamplingCycle, more specificly sceCtrlReadBuffer* to maintain game/game physics speed, so a sceCtrlSetSamplingCycle override cannot be applied to those
 
 ### Hooking references
 
 - https://github.com/TheOfficialFloW/RemasteredControls
 - https://github.com/albe/joysens
+- https://github.com/Freakler/ppsspp-GTARemastered
 
 ### TODO
 
