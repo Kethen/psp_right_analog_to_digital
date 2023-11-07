@@ -585,12 +585,6 @@ int main_thread(SceSize args, void *argp){
 		return 1;
 	}
 
-	// it seems that these location are JR SYSCALL, at least on PPSSPP
-	// given joysens hooks by messing with the immediate JAL from the linked function, I'd assume this is a PPSSPP difference
-	// (could it also be.. nah it's JR SYSCALL, so it'll run SYSCALL then JR, things after that don't matter)
-	// messing with the linked function also does not affect games in PPSSPP so perhaps the stubs are not even shared between modules
-	// hmm what to do
-
 	HIJACK_SYSCALL_STUB(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
 	HIJACK_SYSCALL_STUB(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
 	HIJACK_SYSCALL_STUB(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
