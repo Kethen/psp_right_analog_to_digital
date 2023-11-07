@@ -1,4 +1,6 @@
-Generic analog to digital buttom spam
+### PSP right analog to digital
+
+Map right analog stick input to button spam emulated analog input
 
 This was inspired by https://www.youtube.com/watch?v=3kNy_7blFTc
 
@@ -81,8 +83,12 @@ How the game behaves depends on how they handle fast button flips, whether a but
 
 ### Notes
 
-- spamming button input general don't work well with camera controls, games don't really smooth out repeated button presses. While you can get slowed down camera movement, it'll usually be choppy
+- larger window size would allow for finer emulated analog input, but would increase the delay before a certain analog input is reflected and cause more noticible fluctuations, while a smaller sceCtrlSetSamplingCycle override would increase the rate of button sampling, hence reducing the delay
+	- eg. at 60 inputs per seconds (usual default for 60 fps games), with a window size of 8, at best 8 levels of analog input can be reflected, and is reflected 7.5 times every second
+	- eg. at 180 inputs per seconds (with 5555 microsecond sceCtrlSetSamplingCycle), with a window size of 18, at best 18 levels of analog input can be reflected, and is reflected 10 times every second
+	- eg. at 180 inputs per seconds (with 5555 microsecond sceCtrlSetSamplingCycle), with a window size of 9, at best 9 levels of analog input can be reflected, and is reflected 20 times every second
 - somes games rely on sceCtrlSetSamplingCycle, more specificly sceCtrlReadBuffer* to maintain game/game physics speed, so a sceCtrlSetSamplingCycle override cannot be applied to those
+- spamming button input general don't work well with camera controls, games don't really smooth out repeated button presses. While you can get camera movement with varying speed, it'll usually be choppy
 
 ### Hooking references
 
