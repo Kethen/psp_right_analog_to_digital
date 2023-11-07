@@ -1,4 +1,4 @@
-cp  m33_sdk_prebuilt/include/* /usr/local/pspdev/psp/sdk/include/
-cp  m33_sdk_prebuilt/lib/* /usr/local/pspdev/psp/sdk/lib/
+cp  procfw_sdk_prebuilt/include/* /usr/local/pspdev/psp/sdk/include/
+cp  procfw_sdk_prebuilt/lib/* /usr/local/pspdev/psp/sdk/lib/
 make clean
 make
