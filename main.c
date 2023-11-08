@@ -58,7 +58,8 @@ static unsigned char outer_deadzone = 20;
 static unsigned char inner_deadzone = 10;
 
 static u32 window = 8; // frame
-static int spreaded_button_injection = 0;
+static int algo = 0;
+static u32 min_percent = 0;
 
 // is there a flush..? or the non async version always syncs?
 #define DEBUG 1
@@ -275,7 +276,7 @@ static int get_disc_id(char *out_buf){
 	return 0;
 }
 
-static int button_on(int val, u32 timestamp, u32 w){
+static int button_on(int val, u32 timestamp){
 	int max_val = (127 - outer_deadzone) - (inner_deadzone);
 	if(max_val <= 0){
 		return 0;
@@ -288,23 +289,29 @@ static int button_on(int val, u32 timestamp, u32 w){
 	if(val > max_val){
 		val = max_val;
 	}
-	u32 slice = 1 + (val * (w - 1)) / max_val;
-	if(slice <= 0){
-		return 0;
+
+	u32 min_slice = window * min_percent / 100;
+	if(min_slice == 0){
+		min_slice = 1;
 	}
-	u32 n = timestamp % w + 1;
+	u32 slice = min_slice + (val * (window - min_slice)) / max_val;
+
+	u32 n = timestamp % window + 1;
 	LOG_VERBOSE("val is %d, w is %ld, n is %ld, slice is %ld\n", val, w, n, slice);
-	if(spreaded_button_injection){
-		int odd_frames = window / 2 + window % 2;
-		int slice_odd = slice > odd_frames ? odd_frames : slice;
-		int slice_even = slice > slice_odd ? slice - slice_odd : 0;
-		if(n % 2 == 0){
-			return slice_even >= n / 2;
-		}else{
-			return slice_odd >= 1 + n / 2;
-		}
-	}else{
-		return slice >= n;
+	switch(algo){
+		case 0:
+			return slice >= n;
+		case 1:
+			int odd_frames = window / 2 + window % 2;
+			int slice_odd = slice > odd_frames ? odd_frames : slice;
+			int slice_even = slice > slice_odd ? slice - slice_odd : 0;
+			if(n % 2 == 0){
+				return slice_even >= n / 2;
+			}else{
+				return slice_odd >= 1 + n / 2;
+			}
+		default:
+			return 0;
 	}
 }
 
@@ -325,7 +332,7 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 
 		if(rx > 128){
 			int val = rx - 128;
-			if(button_on(val, timestamp, window))
+			if(button_on(val, timestamp))
 				buttons |= xp_btn;
 		}
 		if(rx < 128){
@@ -333,12 +340,12 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 			if(val == 128){
 				val = 127;
 			}
-			if(button_on(val, timestamp, window))
+			if(button_on(val, timestamp))
 				buttons |= xn_btn;
 		}
 		if(ry > 128){
 			int val = ry - 128;
-			if(button_on(val, timestamp, window))
+			if(button_on(val, timestamp))
 				buttons |= yp_btn;
 		}
 		if(ry < 128){
@@ -346,7 +353,7 @@ static void apply_analog_to_digital(SceCtrlData *pad_data, int count, int negati
 			if(val == 128){
 				val = 127;
 			}
-			if(button_on(val, timestamp, window))
+			if(button_on(val, timestamp))
 				buttons |= yn_btn;
 		}
 
@@ -489,7 +496,7 @@ static void read_config(char *disc_id, int disc_id_valid){
 	}
 
 	int i;
-	for(i = 0;i < AXIS_CNT + 3; i++){
+	for(i = 0;i < AXIS_CNT + 4; i++){
 		int j;
 		char readbuf[50];
 		for(j = 0;j < 50; j++){
@@ -526,12 +533,18 @@ static void read_config(char *disc_id, int disc_id_valid){
 			}else{
 				LOG("not setting controller sampling cycle to %s, invalid value\n", readbuf);
 			}
-		}else{
+		}else if(i == AXIS_CNT + 2){
 			if(strcmp(readbuf, "spread") == 0){
 				LOG("spreading out button injection in a window\n");
-				spreaded_button_injection = 1;
+				algo = 1;
+			}
+		}else{
+			int config_min_percent = atoi(readbuf);
+			if(config_min_percent < 0){
+				LOG("not setting minimal input to %s%%, invalid input\n", readbuf);
 			}else{
-				LOG("grouping button injections at the beginning of window\n");
+				LOG("setting minimal input to %d%%\n", config_min_percent);
+				min_percent = config_min_percent;
 			}
 		}
 	}
