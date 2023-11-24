@@ -93,7 +93,7 @@ if(logfd > 0){ \
 // for real hw, go the jump target then attempt the more standard two instructions hijack
 // hopefully works with the static args loaded sceCtrl functions, at least referencing uofw and joysens
 #define HIJACK_SYSCALL_STUB(a, f, ptr) \
-{ \
+do{ \
   LOG("hijacking jmp function at 0x%lx with 0x%lx\n", (u32)a, (u32)f); \
   u32 _func_ = (u32)a; \
   LOG("original instructions: 0x%lx 0x%lx\n", _lw(_func_), _lw(_func_ + 4)); \
@@ -108,7 +108,13 @@ if(logfd > 0){ \
     LOG("original instructions: 0x%lx 0x%lx\n", _lw(_func_), _lw(_func_ + 4)); \
   } \
   static u32 patch_buffer[3]; \
+  u32 patch_draft[2]; \
+  _sw(0x08000000 | (((u32)(ff) >> 2) & 0x03FFFFFF), (u32)patch_draft); \
+  _sw(0, (u32)patch_draft + 4); \
   if(is_emulator){ \
+    if(_lw(_func_) == _lw((u32)patch_draft) && _lw(_func_ + 4) == _lw((u32)patch_draft + 4)){ \
+      break; \
+    } \
     _sw(_lw(_func_), (u32)patch_buffer); \
     _sw(_lw(_func_ + 4), (u32)patch_buffer + 4); \
   }else{ \
@@ -116,8 +122,8 @@ if(logfd > 0){ \
     _sw(_lw(_func_ + 4), (u32)patch_buffer + 8); \
     MAKE_JUMP((u32)patch_buffer + 4, _func_ + 8); \
   } \
-  _sw(0x08000000 | (((u32)(ff) >> 2) & 0x03FFFFFF), _func_); \
-  _sw(0, _func_ + 4); \
+  _sw(_lw((u32)patch_draft), _func_); \
+  _sw(_lw((u32)patch_draft + 4), _func_ + 4); \
   ptr = (void *)patch_buffer; \
   if(is_emulator){ \
     SceUID modules[32]; \
@@ -155,7 +161,7 @@ if(logfd > 0){ \
       } \
     } \
   } \
-}
+} while(0);
 
 #define CONV_LE(addr, dest) { \
 	dest = addr[0] | addr[1] << 8 | addr[2] << 16 | addr[3] << 24; \
@@ -598,22 +604,24 @@ int main_thread(SceSize args, void *argp){
 		return 1;
 	}
 
-	HIJACK_SYSCALL_STUB(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
-	HIJACK_SYSCALL_STUB(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
-	HIJACK_SYSCALL_STUB(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
-	HIJACK_SYSCALL_STUB(sceCtrlPeekBufferNegative_addr, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
-
-	sceKernelDcacheWritebackAll();
-	sceKernelIcacheClearAll();
-
-	while(0){
-		sceKernelDelayThread(1000 * 16);
-
-		SceCtrlData buf[200];
-		int cnt = sceCtrlPeekBufferPositiveOrig(buf, 5);
-		LOG("sceCtrlPeekBufferPositiveOrig returned %d\n", cnt);
-		apply_analog_to_digital(buf, cnt > 5 ? 5 : cnt, 0);
+	if(is_emulator){
+		LOG("now going into syscall stub hooking loop for ppsspp\n");
 	}
+
+	do{
+		HIJACK_SYSCALL_STUB(sceCtrlReadBufferPositive_addr, sceCtrlReadBufferPositivePatched, sceCtrlReadBufferPositiveOrig);
+		HIJACK_SYSCALL_STUB(sceCtrlReadBufferNegative_addr, sceCtrlReadBufferNegativePatched, sceCtrlReadBufferNegativeOrig);
+		HIJACK_SYSCALL_STUB(sceCtrlPeekBufferPositive_addr, sceCtrlPeekBufferPositivePatched, sceCtrlPeekBufferPositiveOrig);
+		HIJACK_SYSCALL_STUB(sceCtrlPeekBufferNegative_addr, sceCtrlPeekBufferNegativePatched, sceCtrlPeekBufferNegativeOrig);
+
+		sceKernelDcacheWritebackAll();
+		sceKernelIcacheClearAll();
+
+		if(is_emulator){
+			sceKernelDelayThread(1000 * 1000 * 5);
+		}
+	}while(is_emulator);
+
 	LOG("main thread finishes\n");
 	return 0;
 }
